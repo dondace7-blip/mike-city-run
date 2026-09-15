@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Mike: City Run — Stage 1</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;font-family:Arial,sans-serif;touch-action:none}
+#game{width:100%;height:100%;display:block}
+#hud{position:fixed;inset:0;pointer-events:none;color:#fff;text-shadow:0 2px 3px #000}
+#top{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px}
+.panel{background:#0009;border:1px solid #fff4;border-radius:10px;padding:8px 12px;font-weight:bold}
+#objective{position:absolute;top:62px;left:50%;transform:translateX(-50%);min-width:230px;text-align:center}
+#hint{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);background:#0008;padding:8px 12px;border-radius:9px}
+#joystick{position:fixed;left:22px;bottom:24px;width:126px;height:126px;border-radius:50%;background:#ffffff22;border:2px solid #ffffff55;pointer-events:auto}
+#stick{position:absolute;left:38px;top:38px;width:50px;height:50px;border-radius:50%;background:#fff9;border:1px solid #fff}
+.btn{position:fixed;right:22px;width:76px;height:54px;border-radius:14px;border:1px solid #fff6;background:#111b;color:#fff;font-weight:bold;font-size:14px;pointer-events:auto}
+#jump{bottom:94px} #run{bottom:28px}
+#action{right:112px;bottom:28px;width:92px}
+#cam{position:fixed;right:22px;top:100px;width:74px;height:46px;border-radius:12px;border:1px solid #fff6;background:#111b;color:#fff;font-weight:bold;pointer-events:auto}
+#minimap{position:fixed;right:16px;top:160px;width:130px;height:130px;border:2px solid #fff8;border-radius:50%;background:#17231ddd;pointer-events:none}
+@media(min-width:900px){#hint:after{content:"  |  PC: WASD + Shift + Space + mouse";}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+ <div id="top"><div class="panel">❤️ <span id="health">100</span></div><div class="panel">💰 <span id="score">0</span></div></div>
+ <div id="objective" class="panel">STAGE 1 — Explore the city</div>
+ <div id="hint">Walk, run and explore. Enter a car with ACTION.</div>
+ <div id="minimap"></div>
+ <button id="cam">CAM</button>
+ <div id="joystick"><div id="stick"></div></div>
+ <button id="action" class="btn">ACTION</button>
+ <button id="jump" class="btn">JUMP</button>
+ <button id="run" class="btn">RUN</button>
+</div>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.161/build/three.module.js";
+
+const canvas=document.getElementById('game');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x86b8e8); scene.fog=new THREE.Fog(0x86b8e8,120,420);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,600);
+const clock=new THREE.Clock();
+
+scene.add(new THREE.HemisphereLight(0xcfe9ff,0x405040,2.0));
+const sun=new THREE.DirectionalLight(0xffffff,2.2); sun.position.set(100,180,80); sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024); sun.shadow.camera.left=-180; sun.shadow.camera.right=180; sun.shadow.camera.top=180; sun.shadow.camera.bottom=-180; scene.add(sun);
+
+const mats={road:new THREE.MeshStandardMaterial({color:0x292b30,roughness:.95}),side:new THREE.MeshStandardMaterial({color:0x8a8a86}),grass:new THREE.MeshStandardMaterial({color:0x4d7b45}),white:new THREE.MeshStandardMaterial({color:0xf2f2ea}),window:new THREE.MeshStandardMaterial({color:0x263b52,metalness:.2,roughness:.25}),wall:new THREE.MeshStandardMaterial({color:0xb7a58e}),wall2:new THREE.MeshStandardMaterial({color:0x78889a}),tree:new THREE.MeshStandardMaterial({color:0x2e6c35}),trunk:new THREE.MeshStandardMaterial({color:0x65452c}),skin:new THREE.MeshStandardMaterial({color:0xb97858}),shirt:new THREE.MeshStandardMaterial({color:0x2e4568}),pants:new THREE.MeshStandardMaterial({color:0x27303d}),shoe:new THREE.MeshStandardMaterial({color:0x17191c}),yellow:new THREE.MeshStandardMaterial({color:0xffd21f,emissive:0x3b2800})};
+
+function box(w,h,d,mat,x,y,z){let m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;scene.add(m);return m}
+function cyl(r,h,mat,x,y,z,seg=10){let m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,seg),mat);m.position.set(x,y,z);m.castShadow=true;scene.add(m);return m}
+
+// Ground and city grid
+box(500,1,500,mats.grass,0,-.5,0);
+const roadW=14, block=54;
+for(let i=-5;i<=5;i++){
+  box(roadW,.08,500,mats.road,i*block,0.02,0);
+  box(500,.08,roadW,mats.road,0,0.021,i*block);
+  for(let z=-225;z<=225;z+=12) box(.16,.09,6,mats.white,i*block,.075,z);
+  for(let x=-225;x<=225;x+=12) box(6,.09,.16,mats.white,x,.075,i*block);
+}
+for(let ix=-4;ix<=4;ix++) for(let iz=-4;iz<=4;iz++){
+  const cx=ix*block, cz=iz*block;
+  // buildings around each block
+  for(let k=0;k<3;k++){
+    const bx=cx+(k-1)*15, bz=cz+(k%2?13:-13);
+    const h=8+((Math.abs(ix*13+iz*7+k*5)%8))*2;
+    const b=box(18,h,18,k%2?mats.wall:mats.wall2,bx,h/2,bz);
+    box(13,4,.18,mats.window,bx,h*.62,bz-9.1);
+    box(.18,4,13,mats.window,bx-9.1,h*.62,bz);
+  }
+}
+// outskirts hills
+for(let i=0;i<16;i++){const a=i*Math.PI*2/16; const r=300+Math.sin(i*2)*20; cyl(45+((i*7)%20),70,mats.grass,Math.cos(a)*r,35,Math.sin(a)*r,16);}
+// parks and trees
+function tree(x,z,s=1){cyl(.9*s,5*s,mats.trunk,x,2.5*s,z,8);let c=new THREE.Mesh(new THREE.SphereGeometry(3.3*s,10,8),mats.tree);c.position.set(x,7*s,z);c.castShadow=true;scene.add(c)}
+for(let i=0;i<90;i++){let x=(Math.sin(i*91.7)*.5+.5)*470-235,z=(Math.sin(i*43.1)*.5+.5)*470-235;if(Math.abs(x%54)<11||Math.abs(z%54)<11) continue;tree(x,z,.7+(i%3)*.12)}
+
+// lamps
+for(let i=-4;i<=4;i++) for(let z=-210;z<=210;z+=42){cyl(.15,6,mats.shoe,i*54+9,3,z,8);box(.8,.3,.8,mats.white,i*54+9,6,z)}
+
+// Character
+function makeMike(){
+ const g=new THREE.Group(); g.position.set(0,0,0);
+ const body=box(2.1,3.1,1.25,mats.shirt,0,3.8,0); body.parent=g; scene.remove(body);
+ const torso=body;
+ g.add(torso);
+ const head=new THREE.Mesh(new THREE.SphereGeometry(1.05,16,12),mats.skin);head.position.y=6.1;head.castShadow=true;g.add(head);
+ const hair=new THREE.Mesh(new THREE.SphereGeometry(1.08,16,8,0,Math.PI*2,0,Math.PI*.52),mats.shoe);hair.position.y=6.45;hair.castShadow=true;g.add(hair);
+ const parts=[];
+ function limb(x,y,z,w,h,d,mat){let m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=true;g.add(m);parts.push(m);return m}
+ const la=limb(-1.45,3.9,0,.55,2.8,.6,mats.shirt),ra=limb(1.45,3.9,0,.55,2.8,.6,mats.shirt);
+ const lh=limb(-1.45,2.35,0,.55,.55,.6,mats.skin),rh=limb(1.45,2.35,0,.55,.55,.6,mats.skin);
+ const ll=limb(-.6,1.35,0,.65,2.7,.7,mats.pants),rl=limb(.6,1.35,0,.65,2.7,.7,mats.pants);
+ const ls=limb(-.6,.05,-.15,.8,.4,1.25,mats.shoe),rs=limb(.6,.05,-.15,.8,.4,1.25,mats.shoe);
+ // restore proper local positions: body is already in group
+ g.userData={la,ra,ll,rl,ls,rs,velocity:new THREE.Vector3(),grounded:true};
+ scene.add(g); return g;
+}
+const mike=makeMike();
+
+function makeCar(x,z,bodyColor){
+ const g=new THREE.Group(); g.position.set(x,1.0,z);
+ const base=new THREE.Mesh(new THREE.BoxGeometry(5,1.1,8),new THREE.MeshStandardMaterial({color:bodyColor,roughness:.45}));base.castShadow=true;g.add(base);
+ const cabin=box(3.8,1.4,4.1,mats.window,0,.9,0); cabin.parent=g; scene.remove(cabin);g.add(cabin);
+ const wheels=[]; for(const sx of [-2.15,2.15]) for(const sz of [-2.7,2.7]){let w=new THREE.Mesh(new THREE.CylinderGeometry(.72,.72,.5,12),mats.shoe);w.rotation.z=Math.PI/2;w.position.set(sx,-.55,sz);w.castShadow=true;g.add(w);wheels.push(w)}
+ const light=new THREE.Mesh(new THREE.BoxGeometry(2.7,.35,.15),mats.white);light.position.set(0,.1,-4.05);g.add(light);
+ scene.add(g); return {g,wheels,speed:0};
+}
+const cars=[makeCar(25,20,0x315b91),makeCar(-80,-25,0x9c3b35)];
+
+const keys={}; addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true); addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+let joyX=0,joyY=0,running=false,jumping=false;
+const joy=document.getElementById('joystick'),stick=document.getElementById('stick');
+function joyMove(e){const r=joy.getBoundingClientRect(),p=e.touches?e.touches[0]:e;let x=p.clientX-(r.left+r.width/2),y=p.clientY-(r.top+r.height/2);const d=Math.hypot(x,y),m=43;if(d>m){x*=m/d;y*=m/d}stick.style.transform=`translate(${x}px,${y}px)`;joyX=x/m;joyY=y/m}
+joy.addEventListener('pointerdown',e=>{joy.setPointerCapture(e.pointerId);joyMove(e)});joy.addEventListener('pointermove',e=>{if(e.buttons)joyMove(e)});joy.addEventListener('pointerup',()=>{joyX=joyY=0;stick.style.transform=''});joy.addEventListener('pointercancel',()=>{joyX=joyY=0;stick.style.transform=''});
+
+document.getElementById('run').onpointerdown=()=>running=true; document.getElementById('run').onpointerup=()=>running=false;
+document.getElementById('jump').onpointerdown=()=>{if(mike.userData.grounded){mike.userData.velocity.y=8;jumping=true}};
+document.getElementById('action').onpointerdown=()=>{document.getElementById('hint').textContent='ACTION pressed — vehicle interaction is staged for Stage 2.'};
+let camYaw=0,camPitch=.28,drag=false,lastX=0,lastY=0;
+addEventListener('pointerdown',e=>{if(e.clientX<innerWidth*.55 && e.clientY<innerHeight*.65){drag=true;lastX=e.clientX;lastY=e.clientY}});
+addEventListener('pointermove',e=>{if(drag){camYaw-=(e.clientX-lastX)*.006;camPitch=THREE.MathUtils.clamp(camPitch-(e.clientY-lastY)*.004,-.15,.75);lastX=e.clientX;lastY=e.clientY}});
+addEventListener('pointerup',()=>drag=false);
+document.getElementById('cam').onclick=()=>{camYaw+=Math.PI/2};
+
+function update(dt){
+ const forward=(keys['w']?-1:0)+(keys['s']?1:0)+joyY;
+ const side=(keys['d']?1:0)+(keys['a']?-1:0)+joyX;
+ const run=(keys['shift']||running);
+ const speed=run?15:8;
+ let move=new THREE.Vector3(side,0,forward);
+ if(move.length()>1)move.normalize();
+ const angle=camYaw; const world=new THREE.Vector3(
+   move.x*Math.cos(angle)+move.z*Math.sin(angle),0,
+   move.z*Math.cos(angle)-move.x*Math.sin(angle)
+ );
+ mike.position.addScaledVector(world,speed*dt);
+ mike.position.x=THREE.MathUtils.clamp(mike.position.x,-245,245); mike.position.z=THREE.MathUtils.clamp(mike.position.z,-245,245);
+ if(world.lengthSq()>.001){mike.rotation.y=Math.atan2(world.x,world.z); mike.userData.anim=(mike.userData.anim||0)+dt* (run?12:8)}
+ mike.userData.velocity.y-=22*dt;mike.position.y+=mike.userData.velocity.y*dt;
+ if(mike.position.y<=0){mike.position.y=0;mike.userData.velocity.y=0;mike.userData.grounded=true;jumping=false}else mike.userData.grounded=false;
+ const t=mike.userData.anim||0, moving=world.lengthSq()>.001;
+ const swing=moving?Math.sin(t)*.55:0;
+ mike.userData.ll.rotation.x=swing;mike.userData.rl.rotation.x=-swing;mike.userData.la.rotation.x=-swing*.7;mike.userData.ra.rotation.x=swing*.7;
+ mike.position.y += moving&&!mike.userData.grounded ? 0 : 0;
+ // vehicle proximity hint
+ let near=false; for(const c of cars){if(c.g.position.distanceTo(mike.position)<8)near=true}
+ document.getElementById('hint').textContent=near?'ACTION: Enter vehicle (vehicle system activates in Stage 2).':'Walk, run and explore. Enter a car with ACTION.';
+}
+
+function render(){
+ const dt=Math.min(clock.getDelta(),.033); update(dt);
+ const target=mike.position.clone().add(new THREE.Vector3(0,4.1,0));
+ const dist=11;
+ const off=new THREE.Vector3(Math.sin(camYaw)*dist,5.5+Math.sin(camPitch)*4,Math.cos(camYaw)*dist);
+ camera.position.lerp(target.clone().add(off),1-Math.pow(.001,dt)); camera.lookAt(target);
+ renderer.render(scene,camera);
+ requestAnimationFrame(render);
+}
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+render();
+</script>
+</body></html>
